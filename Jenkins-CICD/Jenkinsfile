@@ -1,63 +1,104 @@
-pipeline{
+pipeline {
     agent any
-    tools{
+
+    tools {
         jdk 'jdk17'
-        terraform 'terraform'
+        nodejs 'node16'
     }
-    stages{
-        stage('clean Workspace'){
-            steps{
-                cleanWs()
-            }
-        }
-        stage('checkout from Git'){
-            steps{
-                git branch: 'main', url: 'https://github.com/Aj7Ay/TERRAFORM-JENKINS-CICD.git'
-            }
-        }
-        stage('Terraform version'){
-             steps{
-                 sh 'terraform --version'
-                }
-        }
-        stage("Sonarqube Analysis "){
-            steps{
-                withSonarQubeEnv('sonar-server') {
-                    sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=Terraform \
-                    -Dsonar.projectKey=Terraform '''
-                }
-            }
-        }
-        stage("quality gate"){
-           steps {
-                script {
-                    waitForQualityGate abortPipeline: false, credentialsId: 'Sonar-token' 
-                }
-            } 
-        }
-        stage('TRIVY FS SCAN') {
+
+    environment {
+        SCANNER_HOME = tool 'sonarqube-scanner'
+        GIT_REPO_NAME = "Tetris-manifest"
+        GIT_USER_NAME = "Binank-1988"
+        DOCKER_IMAGE = "binank2000/tetrisv1:latest"
+    }
+
+    stages {
+
+        stage('Checkout Infra Repo') {
             steps {
-                sh "trivy fs . > trivyfs.txt"
+                git branch: 'main', url: 'https://github.com/Binank-1988/TERRAFORM-JENKINS-CICD.git'
             }
         }
-        stage('Excutable permission to userdata'){
-            steps{
-                sh 'chmod 777 website.sh'
+
+        stage('Checkout App Repo') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Binank-1988/Tetris-V1.git'
             }
         }
-        stage('Terraform init'){
-            steps{
-                sh 'terraform init'
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('sonar-server') {
+                    sh '''
+                        $SCANNER_HOME/bin/sonar-scanner \
+                        -Dsonar.projectName=Tetrisv1 \
+                        -Dsonar.projectKey=Tetrisv1
+                    '''
+                }
             }
         }
-        stage('Terraform plan'){
-            steps{
-                sh 'terraform plan'
+
+        stage('Quality Gate') {
+            steps {
+                script {
+                    waitForQualityGate abortPipeline: false, credentialsId: 'sonar-token'
+                }
             }
         }
-        stage('Terraform apply'){
-            steps{
-                sh 'terraform ${action} --auto approve'
+
+        stage('NPM Install') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Trivy FS Scan') {
+            steps {
+                sh 'trivy fs . > trivyfs.txt'
+            }
+        }
+
+        stage('OWASP Dependency Check') {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit',
+                                odcInstallation: 'DP-Check'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
+            }
+        }
+
+        stage('Docker Build and Push') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker', toolName: 'docker') {
+                        sh """
+                            docker build -t tetrisv1 .
+                            docker tag tetrisv1 $DOCKER_IMAGE
+                            docker push $DOCKER_IMAGE
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                sh "trivy image $DOCKER_IMAGE > trivyimage.txt"
+            }
+        }
+
+        stage('Update Deployment File') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
+    sh "git config user.email 'binank1987@gmail.com'"
+    sh "git config user.name 'Binank-1987'"
+    sh "git add deployment.yml"
+    sh "git commit -m 'Update deployment image to $DOCKER_IMAGE'"
+    sh "git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main"
+}
+
+                }
             }
         }
     }
