@@ -87,19 +87,32 @@ pipeline {
             }
         }
 
+                        stage('Checkout Infra Repo') {
+            steps {
+                git branch: 'main', url: 'https://github.com/Binank-1988/Tetris-manifest.git'
+            }
+        }
+
         stage('Update Deployment File') {
             steps {
                 script {
                     withCredentials([string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')]) {
-    sh "git config user.email 'binank1987@gmail.com'"
-    sh "git config user.name 'Binank-1987'"
-    sh "git add deployment.yml"
-    sh "git commit -m 'Update deployment image to $DOCKER_IMAGE'"
-    sh "git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main"
-}
+                          NEW_IMAGE_NAME = "binank2000/tetrisv1:latest"
 
+            // Replace the image name in the deployment.yaml file
+            sh "sed -i 's|image: .*|image: $NEW_IMAGE_NAME|' deployment.yml"
+
+                        sh "git config user.email 'binank1987@gmail.com'"
+                        sh "git config user.name 'Binank-1987'"
+                        sh "git add deployment.yml"
+                        sh "git commit -m 'Update deployment image to $DOCKER_IMAGE' || echo 'No changes to commit'"
+                        sh "git push https://${GITHUB_TOKEN}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main"
+                    }
                 }
             }
         }
+    }
+}
+
     }
 }
